@@ -94,6 +94,18 @@ function App() {
   const [view, setView] = useState<View>('control')
   const [status, setStatus] = useState<EngineStatus>('idle')
 
+  // Sync UI status with engine state changes triggered out-of-band
+  // (e.g. remote OpenClaw start/pause via the local skill HTTP server).
+  useEffect(() => {
+    const cleanup = window.electron?.on(
+      'engine:state',
+      (data: { status: 'running' | 'idle' }) => {
+        setStatus(data.status === 'running' ? 'running' : 'idle')
+      }
+    )
+    return cleanup
+  }, [])
+
   return (
     <div className="app">
       <header className="app-header">

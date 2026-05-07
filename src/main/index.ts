@@ -18,6 +18,13 @@ import {
   InstalledProviderInfo,
   loadInstalledProvider
 } from './provider-bundle'
+import {
+  SkillEngineController,
+  SkillPauseResult,
+  SkillStartResult,
+  startSkillServer,
+  stopSkillServer
+} from './skill-server'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260215'
@@ -177,54 +184,15 @@ app.whenReady().then(async () => {
 
   // ── Runtime / Session IPC（沿用 legacy engine:* 通道名） ──
   ipcMain.handle('engine:start', async (_event, config) => {
-    if (runtime?.isRunning()) return { success: false, error: '引擎已在运行中' }
-    try {
-      const settings = normalizeSettings(config || settingsStore.store)
-      const appType: AppType = settings.appType || 'wechat'
-      if (!settings.vision.apiKey) {
-        return { success: false, error: '请先填写视觉接口密钥' }
-      }
-      if (!settings.chatProvider.installed) {
-        return { success: false, error: '请先安装聊天服务' }
-      }
-
-      const { provider } = await loadInstalledProvider(
-        settings.chatProvider.installed,
-        settings.chatProvider.config
-      )
-
-      runtimeDevice = new RPADevice()
-      runtimeDevice.setAppType(appType)
-      runtimeDevice.setApiKey(settings.vision.apiKey)
-
-      const channel = new WeChatChannelSession(runtimeDevice)
-      const mainWindow = BrowserWindow.getAllWindows()[0]
-      runtime = new RuntimeHost({
-        appType,
-        channel,
-        provider,
-        initialState: createInitialWeChatChannelState(),
-        onLog: (type, content) => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('engine:log', { type, content })
-          }
-        }
-      })
-
-      runtime.startSession().catch((err: any) => {
-        console.error('[Main] Runtime session error:', err)
-      })
-
-      return { success: true }
-    } catch (error: any) {
-      return { success: false, error: error?.message || String(error) }
-    }
+    const result = await startEngineCore(config)
+    if (result.ok) return { success: true }
+    return { success: false, error: result.message || result.reason }
   })
 
-  ipcMain.handle('engine:stop', async () => {
-    if (!runtime?.isRunning()) return { success: false, error: '引擎未运行' }
-    await runtime.stopSession('ipc_stop')
-    return { success: true }
+  ipcMain.handle('engine:stop', async (_event, reason?: string) => {
+    const result = await stopEngineCore(reason || 'ipc_stop')
+    if (result.ok) return { success: true }
+    return { success: false, error: result.message || result.reason }
   })
 
   ipcMain.handle('engine:status', async () => {
@@ -280,6 +248,9 @@ app.whenReady().then(async () => {
     return await runVlmParallelTest(apiKey, 'wechat')
   })
 
+  // ── Skill HTTP Server（OpenClaw 远程启动 / 暂停接入点） ──
+  startSkillServer(skillEngineController)
+
   createWindow()
 
   app.on('activate', function () {
@@ -297,6 +268,115 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
+
+app.on('before-quit', () => {
+  stopSkillServer()
+})
+
+// ── 引擎启动 / 暂停核心逻辑（IPC 与 Skill HTTP Server 共用） ──
+
+async function startEngineCore(rawConfig?: any): Promise<SkillStartResult> {
+  if (runtime?.isRunning()) {
+    return { ok: false, reason: 'already_running', message: '引擎已在运行中' }
+  }
+
+  try {
+    const settings = normalizeSettings(rawConfig || settingsStore.store)
+    const appType: AppType = settings.appType || 'wechat'
+
+    if (!settings.vision.apiKey) {
+      return { ok: false, reason: 'no_vision_key', message: '请先填写视觉接口密钥' }
+    }
+    if (!settings.chatProvider.installed) {
+      return { ok: false, reason: 'no_provider', message: '请先安装聊天服务' }
+    }
+
+    const installedManifest = await getInstalledProviderManifest(
+      settings.chatProvider.installed
+    )
+    const required = installedManifest?.configSchema?.required || []
+    const missing = required.find((key) => {
+      const value = settings.chatProvider.config?.[key]
+      return value === undefined || value === null || value === ''
+    })
+    if (missing) {
+      return {
+        ok: false,
+        reason: 'missing_required_field',
+        message: `缺少必填配置: ${missing}`
+      }
+    }
+
+    const { provider } = await loadInstalledProvider(
+      settings.chatProvider.installed,
+      settings.chatProvider.config
+    )
+
+    runtimeDevice = new RPADevice()
+    runtimeDevice.setAppType(appType)
+    runtimeDevice.setApiKey(settings.vision.apiKey)
+
+    const channel = new WeChatChannelSession(runtimeDevice)
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    runtime = new RuntimeHost({
+      appType,
+      channel,
+      provider,
+      initialState: createInitialWeChatChannelState(),
+      onLog: (type, content) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('engine:log', { type, content })
+        }
+      }
+    })
+
+    runtime.startSession().catch((err: any) => {
+      console.error('[Main] Runtime session error:', err)
+    })
+
+    notifyEngineStateChanged('running')
+
+    return { ok: true }
+  } catch (error: any) {
+    return {
+      ok: false,
+      reason: 'engine_failed',
+      message: error?.message || String(error)
+    }
+  }
+}
+
+async function stopEngineCore(stopReason: string): Promise<SkillPauseResult> {
+  if (!runtime?.isRunning()) {
+    return { ok: false, reason: 'not_running', message: '引擎未运行' }
+  }
+  try {
+    await runtime.stopSession(stopReason)
+    notifyEngineStateChanged('idle')
+    return { ok: true }
+  } catch (error: any) {
+    return {
+      ok: false,
+      reason: 'pause_failed',
+      message: error?.message || String(error)
+    }
+  }
+}
+
+/** 通知 Renderer 引擎状态变化（让 UI 在远程启停时同步切换） */
+function notifyEngineStateChanged(status: 'running' | 'idle'): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('engine:state', { status })
+    }
+  }
+}
+
+const skillEngineController: SkillEngineController = {
+  start: () => startEngineCore(),
+  pause: () => stopEngineCore('skill_pause'),
+  isRunning: () => runtime?.isRunning() ?? false
+}
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.
