@@ -8,7 +8,7 @@ import { DesktopDevice } from './device'
 import { AIClient } from './ai-client'
 import { AppType } from './rpa/types'
 import { BBox } from './rpa/vision-utils'
-import { takeWeChatScreenshot } from './rpa/screenshot-utils'
+import { captureChatMainArea } from './rpa/screenshot-utils'
 import { sendReplyAction, activeUnreadByClickAction, clickUnreadContactAction } from './rpa/input-utils'
 import {
   hasUnreadMessage as hasUnreadMessageDetect,
@@ -123,14 +123,19 @@ export class RPADevice implements DesktopDevice {
         console.warn('[RPADevice] 主布局检测失败（非致命）:', error)
       }
 
-      // 核心判定：只要 detectUnreadArea 成功就算测量通过
-      // chatEntranceArea 是轮询红点的必要条件
-      if (!unreadOk) {
-        console.error('[RPADevice] 布局测量失败：未读区域检测是必要条件')
-        const errorMsg = unreadResult.status === 'fulfilled' && !unreadResult.value.success 
-            ? unreadResult.value.error || '未读区域检测是必要条件' 
-            : '未读区域检测是必要条件'
+      // 核心判定：后续截图 / diff / 发送都依赖主布局和输入框位置。
+      // 未读区域可以缺失，缺失时 session 会退回当前会话 diff 轮询。
+      if (!layoutOk) {
+        const errorMsg =
+          layoutResult.status === 'fulfilled' && !layoutResult.value.success
+            ? layoutResult.value.error || '主布局检测失败'
+            : '主布局检测失败'
         return { success: false, error: `布局测量失败: ${errorMsg}` }
+      }
+
+      const inputArea = getInputAreaFromCache(this.appType)
+      if (!layoutResult.value.chatMainArea || !inputArea) {
+        return { success: false, error: '布局测量失败: 缺少聊天区或输入框位置' }
       }
 
       console.log('[RPADevice] 布局测量完成 ✓')
@@ -142,11 +147,11 @@ export class RPADevice implements DesktopDevice {
   }
 
   async screenshot(): Promise<string> {
-    const result = await takeWeChatScreenshot({ wechatType: this.appType })
-    if (!result.success || !result.screenshot) {
-      throw new Error(result.error || '截图失败')
+    const image = await captureChatMainArea(this.appType)
+    if (!image) {
+      throw new Error('聊天区截图失败')
     }
-    return result.screenshot
+    return image.toDataURL()
   }
 
   async hasUnreadMessage(): Promise<{

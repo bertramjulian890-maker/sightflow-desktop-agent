@@ -239,7 +239,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('engine:updateConfig', async (_event, config) => {
     const settings = normalizeSettings(config || settingsStore.store)
     if (runtimeDevice) {
-      // setApiKey 在 BoxSelectDevice 上是 no-op，对 RPADevice 才生效
+      // setApiKey 在 BoxSelectDevice 上是 no-op，对 RPADevice 才生效。
       runtimeDevice.setApiKey(settings.vision.apiKey)
       runtimeDevice.setAppType(settings.appType)
     }
@@ -373,8 +373,13 @@ async function startEngineCore(rawConfig?: any): Promise<SkillStartResult> {
   try {
     const settings = normalizeSettings(rawConfig || settingsStore.store)
     const appType: AppType = settings.appType || 'wechat'
+    const startupStrategy = resolveSettingsStrategy(appType, settings)
+    const providerNeedsVisionKey =
+      !settings.chatProvider.installed ||
+      settings.chatProvider.installed.id === BUILTIN_DOUBAO_PROVIDER_ID
+    const needsVisionKey = startupStrategy === 'vlm' || providerNeedsVisionKey
 
-    if (!settings.vision.apiKey) {
+    if (needsVisionKey && !settings.vision.apiKey) {
       return { ok: false, reason: 'no_vision_key', message: '请先填写视觉接口密钥' }
     }
 
@@ -513,11 +518,15 @@ function resolveEffectiveStrategy(
   return effective
 }
 
+function resolveSettingsStrategy(appType: AppType, settings: AppSettings): CaptureStrategy {
+  const perApp = settings.capture[appType] ?? { strategy: 'auto' as CaptureStrategy, regions: null }
+  return resolveEffectiveStrategy(appType, perApp.strategy, settings.defaultCaptureStrategy)
+}
+
 /**
  * 把 capture 配置 + strategy 解析成具体设备实例。
- * - VLM 路线：尝试 measureLayout，失败则自动兜底到 box-select 并把策略 sticky 设置为 'box-select'，
- *   避免下一次启动又触发同样的失败。
- * - box-select 路线：缺区域就拉起向导补齐。用户取消 → 抛 user_cancelled。
+ * VLM 和 box-select 只决定"如何测量 LayoutCache"，后续运行统一消费 LayoutCache。
+ * 本轮不做 VLM 失败自动 fallback；VLM 测量失败由 session bootstrap 报错停止。
  */
 async function buildDevice(
   appType: AppType,
@@ -526,38 +535,19 @@ async function buildDevice(
   log: (type: 'thinking' | 'reply' | 'skip' | 'error', content: string) => void
 ): Promise<{ device: DesktopDevice; strategy: CaptureStrategy }> {
   const perApp = settings.capture[appType] ?? { strategy: 'auto' as CaptureStrategy, regions: null }
-  const effective = resolveEffectiveStrategy(
-    appType,
-    perApp.strategy,
-    settings.defaultCaptureStrategy
-  )
+  const effective = resolveSettingsStrategy(appType, settings)
 
   if (effective === 'vlm') {
     const rpa = new RPADevice()
     rpa.setAppType(appType)
     rpa.setApiKey(apiKey)
-    log('thinking', '正在尝试自动识别（VLM）布局...')
-    const result = await rpa.measureLayout()
-    if (result.success) {
-      return { device: rpa, strategy: 'vlm' }
-    }
-
-    log('error', `VLM 布局识别失败：${result.error || '未知错误'}，自动切换为手动框选`)
-    const wizardResult = await runBoxSelectWizard({
-      appType,
-      prefill: perApp.regions
-    })
-    if (!wizardResult.ok || !wizardResult.regions) {
-      throw new Error('user_cancelled_box_select_wizard')
-    }
-    persistRegionsAndStickyStrategy(appType, wizardResult.regions, 'box-select')
-    return { device: new BoxSelectDevice(wizardResult.regions), strategy: 'box-select' }
+    return { device: rpa, strategy: 'vlm' }
   }
 
   // box-select 路线：缺区域则拉向导
   let regions = perApp.regions
   if (!regions) {
-    log('thinking', `首次配置 ${appType}：请框选 4 个关键区域`)
+    log('thinking', `首次配置 ${appType}：请框选 3 个关键区域`)
     const wizardResult = await runBoxSelectWizard({ appType, prefill: null })
     if (!wizardResult.ok || !wizardResult.regions) {
       throw new Error('user_cancelled_box_select_wizard')
@@ -568,7 +558,7 @@ async function buildDevice(
   return { device: new BoxSelectDevice(regions), strategy: 'box-select' }
 }
 
-/** 把向导产出的 regions 写回 settings；strategy 用入参（兜底场景下会被显式设为 'box-select'）。 */
+/** 把向导产出的 regions 写回 settings，并保留当前策略配置。 */
 function persistRegionsAndStickyStrategy(
   appType: AppType,
   regions: BoxRegions,

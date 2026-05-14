@@ -1,18 +1,14 @@
 // Identifies the target application the engine is automating.
 //
-// `wechat` and `wework` are the historical native targets driven by VLM
-// (vision-utils.ts auto-detects their layout). The remaining values are
-// generic IM apps that go through the manual box-selection strategy
-// instead — `BoxSelectDevice` reads user-drawn rectangles from settings
-// and skips the VLM detection step.
+// `wechat` and `wework` are the historical native targets that default to VLM
+// layout measurement. The remaining values default to manual box-selection
+// measurement.
 export type AppType = 'wechat' | 'wework' | 'dingtalk' | 'lark' | 'slack' | 'telegram' | 'generic'
 
 // Which capture strategy the engine should use.
 // - `auto`: smart default — VLM for wechat/wework, box-select for others.
-//   On VLM failure for wechat/wework the engine falls back to box-select
-//   and persists that choice (sticky fallback).
-// - `vlm`: force the VLM-driven RPADevice (only valid for wechat/wework).
-// - `box-select`: force BoxSelectDevice; opens the wizard if no regions
+// - `vlm`: force VLM layout measurement (only valid for wechat/wework).
+// - `box-select`: force manual box selection; opens the wizard if no regions
 //   are saved yet.
 export type CaptureStrategy = 'auto' | 'vlm' | 'box-select'
 

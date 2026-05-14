@@ -169,7 +169,7 @@ export async function runBoxSelectWizard(opts: WizardOpenOptions): Promise<Wizar
 }
 
 // 主进程内部辅助：根据 ScreenRect 数组的 displayId 一致性做基础校验。
-// renderer 已经强制了"四个矩形落在同一显示器"，这里再次保险。
+// renderer 已经强制了"所有矩形落在同一显示器"，这里再次保险。
 export function validateRegionsOnSameDisplay(regions: BoxRegions): {
   ok: boolean
   reason?: string

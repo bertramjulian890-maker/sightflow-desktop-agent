@@ -287,8 +287,22 @@ export async function captureChatMainArea(appType: AppType): Promise<Electron.Na
     const { getLayoutCache, bboxToCropBounds } = await import('./vision-utils')
 
     const layout = getLayoutCache(appType)
-    if (!layout?.chatMainArea?.bbox) {
+    if (!layout?.chatMainArea) {
       console.log('[captureChatMainArea] 未找到 chatMainArea 缓存')
+      return null
+    }
+
+    if (layout.chatMainArea.rect) {
+      const screenshotResult = await captureScreenRegion(layout.chatMainArea.rect)
+      if (!screenshotResult.success || !screenshotResult.nativeImage) {
+        console.log('[captureChatMainArea] 绝对区域截图失败:', screenshotResult.error)
+        return null
+      }
+      return screenshotResult.nativeImage
+    }
+
+    if (!layout.chatMainArea.bbox) {
+      console.log('[captureChatMainArea] chatMainArea 缺少 bbox/rect')
       return null
     }
 

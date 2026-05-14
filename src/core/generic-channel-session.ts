@@ -1,5 +1,5 @@
 // src/core/generic-channel-session.ts
-// 通用 ChannelSession — 既驱动 RPADevice（VLM 路线），也驱动 BoxSelectDevice（手动框选路线）。
+// 通用 ChannelSession — 驱动 DesktopDevice，具体位置来源由设备测量后写入 LayoutCache。
 //
 // 设计原则：本文件只依赖 DesktopDevice 接口。所有微信特定的行为（如 layoutCache 清理、
 // VLM bbox 状态同步）都封装到具体设备的 onSessionStart / onSessionStop / clearUnreadCache

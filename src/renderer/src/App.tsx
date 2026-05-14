@@ -253,6 +253,7 @@ function ControlPanel({
 
   const handleAppTypeChange = useCallback(
     async (next: AppType) => {
+      if (status === 'running') return
       setAppType(next)
       await window.electron?.invoke('settings:set', { appType: next })
       await window.electron?.invoke('engine:updateConfig', {
@@ -261,10 +262,11 @@ function ControlPanel({
       })
       await reloadRegionsForApp(next)
     },
-    [reloadRegionsForApp]
+    [reloadRegionsForApp, status]
   )
 
   const handleOpenWizard = useCallback(async () => {
+    if (status === 'running') return
     setOpeningWizard(true)
     try {
       const result = (await window.electron?.invoke('capture:openSetupWizard', {
@@ -281,7 +283,7 @@ function ControlPanel({
     } finally {
       setOpeningWizard(false)
     }
-  }, [appType])
+  }, [appType, status])
 
   const addLog = useCallback((type: LogEntry['type'], content: string) => {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false })
@@ -328,6 +330,7 @@ function ControlPanel({
         captureReady={captureReady}
         isVlm={isVlm}
         openingWizard={openingWizard}
+        running={status === 'running'}
         onAppTypeChange={handleAppTypeChange}
         onOpenWizard={handleOpenWizard}
       />
@@ -360,6 +363,7 @@ interface TargetAppQuickCardProps {
   captureReady: boolean
   isVlm: boolean
   openingWizard: boolean
+  running: boolean
   onAppTypeChange: (t: AppType) => void
   onOpenWizard: () => void
 }
@@ -371,6 +375,7 @@ function TargetAppQuickCard({
   captureReady,
   isVlm,
   openingWizard,
+  running,
   onAppTypeChange,
   onOpenWizard
 }: TargetAppQuickCardProps): React.JSX.Element {
@@ -389,6 +394,7 @@ function TargetAppQuickCard({
           className="form-input"
           value={appType}
           onChange={(e) => onAppTypeChange(e.target.value as AppType)}
+          disabled={running || openingWizard}
           style={{ flex: 1 }}
         >
           {(Object.keys(APP_TYPE_LABELS) as AppType[]).map((type) => (
@@ -403,7 +409,7 @@ function TargetAppQuickCard({
           <button
             className="btn btn-primary"
             onClick={onOpenWizard}
-            disabled={openingWizard}
+            disabled={running || openingWizard}
             style={{
               whiteSpace: 'nowrap',
               display: 'inline-flex',
@@ -462,7 +468,7 @@ function TargetAppQuickCard({
           }}
         />
         {statusText}
-        {!isVlm && !regions ? '：点右侧按钮先把 4 个关键区域圈出来' : ''}
+        {!isVlm && !regions ? '：点右侧按钮先把 3 个关键区域圈出来' : ''}
       </div>
     </div>
   )

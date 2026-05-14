@@ -5,7 +5,7 @@
 // 检测微信/企微布局（聊天入口、联系人列表、输入框等）
 
 import { AIClient } from '../ai-client'
-import { AppType } from './types'
+import { AppType, ScreenRect } from './types'
 import { captureWechatWindow } from './screenshot-utils'
 import { getWindowInfo, getWindowInfoSync } from './window-utils'
 
@@ -16,8 +16,10 @@ const IS_WINDOWS = process.platform === 'win32'
 export type BBox = [number, number, number, number] // [x1, y1, x2, y2] 归一化 0-1000
 
 export interface LayoutAreaItem {
-  bbox: BBox
+  bbox?: BBox
+  rect?: ScreenRect
   coordinates: [number, number] // 屏幕绝对坐标
+  source?: 'vlm' | 'box-select' | 'derived'
 }
 
 export interface LayoutCache {
@@ -319,11 +321,11 @@ export async function getUnreadArea(
 }> {
   const cache = getLayoutCache(appType)
 
-  // 有完整缓存直接返回
-  if (cache?.chatEntranceArea && cache?.firstContact) {
+  // 有完整 VLM bbox 缓存直接返回。box-select 写入的 rect-only 区域不能用于红点 bbox 检测。
+  if (cache?.chatEntranceArea?.bbox && cache?.firstContact?.bbox) {
     return {
-      chatEntranceArea: cache.chatEntranceArea,
-      firstContact: cache.firstContact
+      chatEntranceArea: { bbox: cache.chatEntranceArea.bbox, coordinates: cache.chatEntranceArea.coordinates },
+      firstContact: { bbox: cache.firstContact.bbox, coordinates: cache.firstContact.coordinates }
     }
   }
 
@@ -334,8 +336,12 @@ export async function getUnreadArea(
   if (!result.success) {
     console.error('[VisionUtils] 检测失败:', result.error)
     return {
-      chatEntranceArea: cache?.chatEntranceArea || null,
-      firstContact: cache?.firstContact || null
+      chatEntranceArea: cache?.chatEntranceArea?.bbox
+        ? { bbox: cache.chatEntranceArea.bbox, coordinates: cache.chatEntranceArea.coordinates }
+        : null,
+      firstContact: cache?.firstContact?.bbox
+        ? { bbox: cache.firstContact.bbox, coordinates: cache.firstContact.coordinates }
+        : null
     }
   }
 
@@ -366,6 +372,11 @@ export function getInputAreaFromCache(appType: AppType): LayoutAreaItem | null {
   // 从 chatMainArea 反推
   if (!cache?.chatMainArea) {
     console.warn('[VisionUtils] chatMainArea 不存在，无法反推 inputArea')
+    return null
+  }
+
+  if (!cache.chatMainArea.bbox) {
+    console.warn('[VisionUtils] chatMainArea 没有 bbox，无法反推 inputArea')
     return null
   }
 

@@ -14,15 +14,21 @@
 
 import { DesktopDevice } from './device'
 import { AppType, BoxRegions, ScreenRect } from './rpa/types'
-import { BBox } from './rpa/vision-utils'
-import { captureScreenRegion } from './rpa/screenshot-utils'
-import { comparePngBuffers } from './rpa/image-compare'
+import {
+  BBox,
+  clearLayoutCache,
+  getInputAreaFromCache,
+  LayoutCache,
+  setLayoutCache
+} from './rpa/vision-utils'
+import { captureChatMainArea } from './rpa/screenshot-utils'
 import {
   activeUnreadByClickAction,
   clickUnreadContactAction,
   defaultClickPolicy,
   sendReplyByCoordsAction
 } from './rpa/input-utils'
+import { comparePngBuffers } from './rpa/image-compare'
 
 function rectCenter(rect: ScreenRect): [number, number] {
   return [rect.x + rect.width / 2, rect.y + rect.height / 2]
@@ -55,8 +61,8 @@ export class BoxSelectDevice implements DesktopDevice {
   }
 
   // ── 生命周期 ──
-  // box-select 没有 wechat layoutCache 之类的全局缓存，唯一的 baseline 是聊天区像素截图。
   onSessionStop(): void {
+    clearLayoutCache(this.appType)
     this.chatBaseline = null
   }
 
@@ -67,7 +73,7 @@ export class BoxSelectDevice implements DesktopDevice {
       return { success: false, error: '尚未保存框选区域，请先完成框选向导' }
     }
 
-    // 校验四个必选矩形非零；unreadIndicator 允许为 null（hasUnreadMessage 会回退到 chatMain diff）。
+    // 保持 box-select 既有三框模型；measureLayout 只负责把这些测量结果写入 LayoutCache。
     const required: Array<[string, ScreenRect | null | undefined]> = [
       ['contactList', this.regions.contactList],
       ['chatMain', this.regions.chatMain],
@@ -78,18 +84,39 @@ export class BoxSelectDevice implements DesktopDevice {
         return { success: false, error: `框选区域 ${name} 无效，请重新框选` }
       }
     }
+
+    const chatMainCenter = rectCenter(this.regions.chatMain)
+    const inputBoxCenter = rectCenter(this.regions.inputBox)
+    const layout: LayoutCache = {
+      chatEntranceArea: null,
+      firstContact: null,
+      searchInputBox: null,
+      headerArea: null,
+      chatMainArea: {
+        rect: this.regions.chatMain,
+        coordinates: chatMainCenter,
+        source: 'box-select'
+      },
+      messageInputArea: {
+        rect: this.regions.inputBox,
+        coordinates: inputBoxCenter,
+        source: 'box-select'
+      },
+      timestamp: Date.now(),
+      appType: this.appType
+    }
+    setLayoutCache(this.appType, layout)
     return { success: true }
   }
 
   // 把 chatMain 区域截图作为"会话上下文"返回给 provider VLM 分析。
   // 比起 RPADevice 整窗截图，这里更聚焦于聊天内容，省 token 且与目标 app 无关。
   async screenshot(): Promise<string> {
-    if (!this.regions) throw new Error('尚未保存框选区域')
-    const result = await captureScreenRegion(this.regions.chatMain)
-    if (!result.success || !result.screenshotBase64) {
-      throw new Error(result.error || 'chatMain 截图失败')
+    const image = await captureChatMainArea(this.appType)
+    if (!image) {
+      throw new Error('chatMain 截图失败')
     }
-    return result.screenshotBase64
+    return image.toDataURL()
   }
 
   // 单会话模式：BoxSelectDevice 只关心"当前已经打开的对话窗口里有没有新内容"，
@@ -123,25 +150,23 @@ export class BoxSelectDevice implements DesktopDevice {
   // ── chatMainArea Diff ──
 
   async setChatBaseline(): Promise<boolean> {
-    if (!this.regions) return false
-    const result = await captureScreenRegion(this.regions.chatMain)
-    if (!result.success || !result.nativeImage) {
-      console.warn('[BoxSelectDevice] baseline 设置失败:', result.error)
+    const image = await captureChatMainArea(this.appType)
+    if (!image) {
+      console.warn('[BoxSelectDevice] baseline 设置失败: chatMain 截图为空')
       return false
     }
-    this.chatBaseline = result.nativeImage.toPNG()
+    this.chatBaseline = image.toPNG()
     return true
   }
 
   async hasChatAreaChanged(): Promise<{ hasDiff: boolean; hasBaseline: boolean }> {
     if (!this.chatBaseline) return { hasDiff: false, hasBaseline: false }
-    if (!this.regions) return { hasDiff: false, hasBaseline: true }
 
-    const result = await captureScreenRegion(this.regions.chatMain)
-    if (!result.success || !result.nativeImage) {
+    const image = await captureChatMainArea(this.appType)
+    if (!image) {
       return { hasDiff: false, hasBaseline: true }
     }
-    const current = result.nativeImage.toPNG()
+    const current = image.toPNG()
     const cmp = comparePngBuffers(this.chatBaseline, current, {
       threshold: 0.1,
       changeThreshold: 0.5
@@ -156,10 +181,9 @@ export class BoxSelectDevice implements DesktopDevice {
   // ── 动作层 ──
 
   async sendMessage(text: string): Promise<void> {
-    if (!this.regions) throw new Error('尚未保存框选区域')
-    // 框选路线：用户已经精确指定了输入框矩形，直接点几何中心，
-    // 不再加 jitter——VLM 路线的"模拟人类"抖动在这里只会偏离用户的本意。
-    const [x, y] = rectCenter(this.regions.inputBox)
+    const inputArea = getInputAreaFromCache(this.appType)
+    if (!inputArea) throw new Error('尚未测量输入框区域')
+    const [x, y] = inputArea.coordinates
     const ok = await sendReplyByCoordsAction(x, y, text)
     if (!ok) throw new Error('发送消息失败')
   }

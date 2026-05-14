@@ -4,10 +4,10 @@
 // 当前主路径里，这个接口由 ChannelSession 依赖，用于统一访问宿主应用的感知与动作能力。
 // 旧的 hook-based 编排已移除，宿主编排只保留 Runtime / Channel / Provider 这条主线。
 //
-// 实现：
-// - `RPADevice`         — 经典 VLM 感知路线（wechat / wework）。
-// - `BoxSelectDevice`   — 用户手动框选 4 个区域的通用 IM 路线（钉钉 / 飞书 / Slack / Telegram / generic）。
-//   两种实现共享同一接口，由 `GenericChannelSession` 调用，主进程根据 capture strategy 选择实例化哪个。
+// 当前实现：
+// - `RPADevice` 用 VLM 测量 LayoutCache。
+// - `BoxSelectDevice` 用用户框选结果测量 LayoutCache。
+// 两条路径后续都通过 LayoutCache 消费位置。
 
 import { AppType } from './rpa/types'
 import { BBox } from './rpa/vision-utils'
@@ -19,7 +19,7 @@ export interface DesktopDevice {
 
   // ── 生命周期 ──
   // session 启停时由 GenericChannelSession 调用，给设备机会做缓存初始化 / 清理。
-  // 默认实现可为 no-op；RPADevice 在 onSessionStop 里清掉 layoutCache，BoxSelectDevice 用作 baseline reset。
+  // 默认实现可为 no-op；设备在 onSessionStop 里清掉布局和 baseline。
   onSessionStart?(): Promise<void> | void
   onSessionStop?(): Promise<void> | void
 
@@ -27,9 +27,7 @@ export interface DesktopDevice {
 
   /**
    * 启动时一次性布局测量。
-   * - RPADevice: VLM 定位 chatEntrance / firstContact / inputArea 并缓存。
-   * - BoxSelectDevice: 校验已保存的用户框选区域是否有效；缺失则返回 success: false，
-   *   主进程会拉起框选向导补齐。
+   * VLM / box-select 都产出统一 LayoutCache，后续截图、diff、发送只消费 LayoutCache。
    */
   measureLayout(): Promise<{ success: boolean; error?: string }>
 
@@ -39,7 +37,7 @@ export interface DesktopDevice {
   /**
    * Step 1 粗检测：聊天入口是否有红点？
    * 内部流程: 定位 chatEntranceArea / contactList → 局部 crop → 红点像素扫描。
-   * BoxSelectDevice 在 unreadIndicator 为空时会回退到 chatMain pixel-diff 信号。
+   * 缺少未读切换位置时返回无未读，session 会回到 chatMain diff 轮询。
    */
   hasUnreadMessage(): Promise<{
     hasUnread: boolean
@@ -57,8 +55,7 @@ export interface DesktopDevice {
 
   /**
    * 清除未读区域的坐标缓存（chatEntranceArea + firstContact）。
-   * RPADevice: 清 VLM 缓存强制重新检测。
-   * BoxSelectDevice: 通常 no-op。
+   * 清除未读区域缓存。
    */
   clearUnreadCache(): void
 
