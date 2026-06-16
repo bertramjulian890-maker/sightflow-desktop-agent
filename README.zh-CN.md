@@ -36,6 +36,10 @@
 
 > **SightFlow 不替代 LLM，而是补齐 LLM 无法进入软件世界的关键一层** —— 把屏幕像素解析成结构化语义，再把任务意图转成真实操作。
 
+<div align="center">
+  <video src="./docs/videos/sightflow_demo.mp4" width="100%" controls></video>
+</div>
+
 企业最重的工作，不在大模型 API 接口里，而**在屏幕上、在人类工作流中**：
 
 - **界面多** —— 一个任务横跨多个软件、多个窗口。
