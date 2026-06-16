@@ -37,7 +37,7 @@
 > **SightFlow does not replace the LLM. It completes the one layer the LLM cannot reach** — turning screen pixels into structured semantics, and task intent into real operations.
 
 <div align="center">
-  <video src="https://github.com/sightflow-dev/sightflow-desktop-agent/raw/main/docs/videos/sightflow_demo.mp4" width="100%" controls></video>
+  <video src="https://github.com/user-attachments/assets/fdceada5-940b-45d1-bf96-2d26df651809" width="100%" controls></video>
 </div>
 
 An enterprise's heaviest work does not live inside an LLM API. It lives **on the screen, inside human workflows**:
