@@ -1,0 +1,34 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:        # 手动触发：GitHub 页面点 "Run workflow"
+  push:
+    branches: [main]        # 推送到 main 时自动构建
+
+jobs:
+  build:
+    runs-on: windows-2022   # 微软云构建机，自带 VS2022 + ClangCL + Python
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22   # 用 Node 22 LTS（与 Electron 39 内部版本更匹配）
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Windows portable
+        run: npm run build:win
+        env:
+          GYP_MSVS_VERSION: 2022
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SightFlow-Windows
+          path: dist/*.exe

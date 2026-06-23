@@ -40,7 +40,7 @@
     "electron-store": "^11.0.2",
     "get-windows": "^9.3.0",
     "jimp": "^1.6.1",
-    "node-window-manager": "^2.2.4",
+    "node-window-manager": "npm:@xpf0000/node-window-manager@^0.0.16",
     "pixelmatch": "^7.1.0",
     "pngjs": "^7.0.0"
   },
