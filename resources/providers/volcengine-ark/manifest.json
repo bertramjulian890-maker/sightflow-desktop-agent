@@ -1,8 +1,8 @@
 {
   "apiVersion": 1,
   "id": "volcengine-ark",
-  "name": "火山方舟聊天服务",
-  "version": "1.0.0",
+  "name": "火山方舟聊天服务（支持 DeepSeek 回复）",
+  "version": "2.0.0",
   "entry": "provider.bundle.js",
   "moduleType": "module",
   "capabilities": ["chat"],
@@ -11,17 +11,36 @@
     "properties": {
       "apiKey": {
         "type": "password",
-        "title": "接口密钥"
+        "title": "视觉接口密钥（火山引擎 AK）"
       },
       "model": {
         "type": "string",
-        "title": "模型名称",
+        "title": "视觉模型",
         "default": "doubao-seed-2-0-lite-260215"
       },
       "systemPrompt": {
         "type": "string",
-        "title": "系统提示词",
+        "title": "视觉分析提示词",
         "default": ""
+      },
+      "replyApiKey": {
+        "type": "password",
+        "title": "DeepSeek 接口密钥（填了则走 DeepSeek 回复）"
+      },
+      "replyBaseURL": {
+        "type": "string",
+        "title": "DeepSeek API 地址",
+        "default": "https://api.deepseek.com/v1"
+      },
+      "replyModel": {
+        "type": "string",
+        "title": "DeepSeek 模型",
+        "default": "deepseek-chat"
+      },
+      "replySystemPrompt": {
+        "type": "string",
+        "title": "DeepSeek 回复提示词",
+        "default": "你是一个微信自动回复助手。根据以下聊天记录，生成一个自然、口语化的回复。只输出回复文字，不要解释。如果不需要回复，输出 [SKIP]。"
       }
     },
     "required": ["apiKey"]
