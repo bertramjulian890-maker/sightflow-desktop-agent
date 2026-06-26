@@ -29,8 +29,11 @@ jobs:
         env:
           GYP_MSVS_VERSION: 2022
 
-      - name: Build Windows portable
-        run: npm run build:win
+      - name: Build JS bundles
+        run: npm run build
+
+      - name: Package Windows installer
+        run: npx electron-builder --win --publish=never
         env:
           GYP_MSVS_VERSION: 2022
 
