@@ -18,14 +18,21 @@ jobs:
         with:
           node-version: 22   # 用 Node 22 LTS（与 Electron 39 内部版本更匹配）
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install dependencies (skip native compile)
+        run: npm install --ignore-scripts
+
+      - name: Apply patches
+        run: npx patch-package
+
+      - name: Rebuild native modules for Electron
+        run: npx electron-builder install-app-deps
+        env:
+          GYP_MSVS_VERSION: 2022
 
       - name: Build Windows portable
         run: npm run build:win
         env:
           GYP_MSVS_VERSION: 2022
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
