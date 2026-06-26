@@ -1,0 +1,14 @@
+diff --git a/node_modules/node-window-manager/binding.gyp b/node_modules/node-window-manager/binding.gyp
+index 666f0d3..c3238a1 100644
+--- a/node_modules/node-window-manager/binding.gyp
++++ b/node_modules/node-window-manager/binding.gyp
+@@ -18,7 +18,8 @@
+             "d3d11.lib",
+             "dxgi.lib",
+             "windowscodecs.lib",
+-            "shcore.lib"
++            "shcore.lib",
++            "runtimeobject.lib"
+           ],
+             "defines": [
+               "WIN32_LEAN_AND_MEAN",
